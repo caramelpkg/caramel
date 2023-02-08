@@ -34,6 +34,7 @@ class downloader(object):
                                2 -> HCHO
                                3 -> CH4
                                4 -> CO
+                output_fld [Path]: a pathlib object describing the output folder
                 maxpage [int]: the number of pages in the xml file
                 username [str]: the username to log on s5phub
                 password [str]: the password to log on s5phub 
@@ -89,5 +90,5 @@ class downloader(object):
 # testing
 if __name__ == "__main__":
 
-    dl_obj = downloader(30,35,-90,-85,'2020-06-01','2020-06-30')
+    dl_obj = downloader(37,40,-79,-73.97,'2020-06-01','2020-06-10')
     dl_obj.download_tropomi_l2(1,Path('download_bucket/'))
