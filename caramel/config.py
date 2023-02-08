@@ -2,6 +2,7 @@ import numpy as np
 from dataclasses import dataclass
 import datetime
 
+
 @dataclass
 class satellite:
     vcd: np.ndarray
@@ -17,6 +18,7 @@ class satellite:
     quality_flag: np.ndarray
     pressure_mid: np.ndarray
     averaging_kernels: np.ndarray
+
 
 @dataclass
 class ctm_model:
