@@ -68,10 +68,10 @@ def tropomi_reader_no2(product_dir:str,num_job = 1) -> satellite:
         tm5_a = np.concatenate((tm5_a[:,0], 0), axis=None)
         tm5_b = np.array(_read_group_nc(fname,1,'PRODUCT','tm5_constant_b'))
         tm5_b = np.concatenate((tm5_b[:,0], 0), axis=None)
-        ps = np.array(_read_group_nc(fname,3,['PRODUCT','SUPPORT_DATA','INPUT_DATA'],'surface_pressure'))
+        ps    = np.array(_read_group_nc(fname,3,['PRODUCT','SUPPORT_DATA','INPUT_DATA'],'surface_pressure'))
         p_mid = np.zeros((34,np.shape(vcd)[0], np.shape(vcd)[1]))
-        SWs = np.zeros((34,np.shape(vcd)[0], np.shape(vcd)[1]))
-        AKs = np.array(_read_group_nc(fname,1,'PRODUCT','averaging_kernel'))
+        SWs   = np.zeros((34,np.shape(vcd)[0], np.shape(vcd)[1]))
+        AKs   = np.array(_read_group_nc(fname,1,'PRODUCT','averaging_kernel'))
         for z in range(0,34):
             p_mid[z,:,:] = 0.5*(tm5_a[z]+tm5_b[z]*ps[:,:]+tm5_a[z+1]+tm5_b[z+1]*ps[:,:])/100
             SWs[z,:,:] = AKs[:,:,z]*amf_total
