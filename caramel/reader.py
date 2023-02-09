@@ -79,7 +79,7 @@ def tropomi_reader_hcho(fname: str, interpolation_flag=True) -> satellite:
     tm5_a = _read_group_nc(
         fname, 3, ['PRODUCT', 'SUPPORT_DATA', 'INPUT_DATA'], 'tm5_constant_a')
     tm5_b = _read_group_nc(
-        fname, 3, ['PRODUCT', 'SUPPORT_DATA', 'INPUT_DATA'], 'tm5_constant_b')
+        fname, 3, ['PRODUCT', 'SUPPORT_DATA', 'INPUT_DATA'], 'tm5_constant_b')    
     ps = _read_group_nc(fname, 3, [
                         'PRODUCT', 'SUPPORT_DATA', 'INPUT_DATA'], 'surface_pressure').astype('float32')
     p_mid = np.zeros(
@@ -87,11 +87,12 @@ def tropomi_reader_hcho(fname: str, interpolation_flag=True) -> satellite:
     SWs = np.zeros((34, np.shape(vcd)[0], np.shape(vcd)[1])).astype('float32')
     AKs = _read_group_nc(fname, 3, [
                          'PRODUCT', 'SUPPORT_DATA', 'DETAILED_RESULTS'], 'averaging_kernel').astype('float32')
+    # for some reason, in the HCHO product, a and b values are the center instead of the edges (unlike NO2)
     for z in range(0, 34):
         p_mid[z, :, :] = (tm5_a[z]+tm5_b[z]*ps[:, :])/100.0
         SWs[z, :, :] = AKs[:, :, z]*amf_total
     tropomi_hcho.pressure_mid = p_mid
-    tropomi_hcho.averaging_kernels = SWs
+    tropomi_hcho.scattering_weights = SWs
     # read the precision
     tropomi_hcho.uncertainty = _read_group_nc(fname, 1, 'PRODUCT',
                                               'formaldehyde_tropospheric_vertical_column_precision').astype('float32')
@@ -155,7 +156,7 @@ def tropomi_reader_no2(fname: str, interpolation_flag=True) -> satellite:
                               tm5_a[z+1]+tm5_b[z+1]*ps[:, :])/100
         SWs[z, :, :] = AKs[:, :, z]*amf_total
     tropomi_no2.pressure_mid = p_mid
-    tropomi_no2.averaging_kernels = SWs
+    tropomi_no2.scattering_weights = SWs
     # read the tropopause layer index
     trop_layer = _read_group_nc(
         fname, 1, 'PRODUCT', 'tm5_tropopause_layer_index')
@@ -238,5 +239,5 @@ class readers(object):
 if __name__ == "__main__":
 
     reader_obj = readers()
-    reader_obj.add_satellite_data(2, Path('download_bucket/hcho/'))
+    reader_obj.add_satellite_data(2, Path('download_bucket/hcho'))
     reader_obj.read_satellite_data()

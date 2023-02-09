@@ -18,6 +18,7 @@ class satellite:
     quality_flag: np.ndarray
     pressure_mid: np.ndarray
     averaging_kernels: np.ndarray
+    scattering_weights: np.ndarray
 
 
 @dataclass
