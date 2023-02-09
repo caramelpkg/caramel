@@ -2,7 +2,7 @@ import numpy as np
 from config import satellite, ctm_model
 from scipy.spatial import Delaunay
 from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
-
+from test_plotter import test_plotter
 
 def _interpolosis(tri: Delaunay, Z, X, Y, interpolator_type):
     # to make the interpolator() shorter
@@ -18,7 +18,7 @@ def _interpolosis(tri: Delaunay, Z, X, Y, interpolator_type):
     return ZZ
 
 
-def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, model_data: ctm_model):
+def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, ctm_models_coordinate: dict):
     '''
         Initialize the interpolator function
         Input:
@@ -28,28 +28,27 @@ def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, 
                     3 > Cressman (not implemented yet)
                     4 > Poppy (not implemented yet)     
             sat_data  [satellite]: a dataclass for satellite data
-            model_data [ctm_model]: a dataclass for model data
+            ctm_models_coordinate [dic]: a dictionary containing lat and lon of the model
     '''
 
     # creating the delaunay triangulation on satellite coordinates
     # get the center lat/lon
-    sat_center_lat = np.nanmean(sat_data.latitude_corner, axis=0).squeeze()
-    sat_center_lon = np.nanmean(sat_data.longitude_corner, axis=0).squeeze()
+    sat_center_lat = np.nanmean(sat_data.latitude_corner, axis=2).squeeze()
+    sat_center_lon = np.nanmean(sat_data.longitude_corner, axis=2).squeeze()
     # mask bad data
     mask = sat_data.quality_flag <= 0.75
-    mask = np.multiply(mask, 1).squeeze()
+    mask = np.multiply(mask, 1.0).squeeze()
     mask[mask == 0] = np.nan
     # define the triangulation
     points = np.zeros((np.size(sat_center_lat), 2))
     points[:, 0] = sat_center_lon.flatten()
     points[:, 1] = sat_center_lat.flatten()
-
     tri = Delaunay(points)
     # define the grid
-    lat_ctm_min = np.min(model_data.latitude.flatten())
-    lat_ctm_max = np.min(model_data.latitude.flatten())
-    lon_ctm_min = np.min(model_data.longitude.flatten())
-    lon_ctm_max = np.min(model_data.longitude.flatten())
+    lat_ctm_min = np.min(ctm_models_coordinate['Latitude'].flatten())
+    lat_ctm_max = np.max(ctm_models_coordinate['Latitude'].flatten())
+    lon_ctm_min = np.min(ctm_models_coordinate['Longitude'].flatten())
+    lon_ctm_max = np.max(ctm_models_coordinate['Longitude'].flatten())
 
     dx = 0.0  # buffer
     lon_grid = np.arange(lon_ctm_min-dx, lon_ctm_max+dx, grid_size)
@@ -61,6 +60,8 @@ def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, 
 
     interpolated_sat.vcd = _interpolosis(
         tri, sat_data.vcd*mask, lons_grid, lats_grid, interpolator_type)
+    test_plotter(lons_grid,lats_grid,interpolated_sat.vcd)
+
     interpolated_sat.scd = _interpolosis(
         tri, sat_data.scd*mask, lons_grid, lats_grid, interpolator_type)
     interpolated_sat.tropopause = _interpolosis(
@@ -72,7 +73,7 @@ def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, 
 
     # interpolate 3Ds fields
     for z in range(0, np.shape(sat_data.pressure_mid)[0]):
-        interpolated_sat.averaging_kernels[z, :, :] = _interpolosis(tri, sat_data.averaging_kernels[z, :, :].squeeze()
+        interpolated_sat.averaging_kernels[z, :, :] = _interpolosis(tri, sat_data.scattering_weights[z, :, :].squeeze()
                                                                     * mask, lons_grid, lats_grid, interpolator_type)
         interpolated_sat.pressure_mid[z, :, :] = _interpolosis(tri, sat_data.pressure_mid[z, :, :].squeeze()
                                                                * mask, lons_grid, lats_grid, interpolator_type)

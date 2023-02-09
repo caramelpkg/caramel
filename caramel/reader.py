@@ -1,5 +1,4 @@
 import numpy as np
-import os
 from pathlib import Path
 import datetime
 import glob
@@ -21,6 +20,17 @@ def _read_nc(filename, var):
     return np.squeeze(out)
 
 
+def _get_nc_attr(filename, var):
+    # getting attributes
+    nc_f = filename
+    nc_fid = Dataset(nc_f, 'r')
+    attr = {}
+    for attrname in nc_fid.variables[var].ncattrs():
+        attr[attrname] = getattr(nc_fid.variables[var], attrname)
+    nc_fid.close()
+    return attr
+
+
 def _read_group_nc(filename, num_groups, group, var):
     # reading nc files with a group structure
     nc_f = filename
@@ -34,6 +44,70 @@ def _read_group_nc(filename, num_groups, group, var):
             nc_fid.groups[group[0]].groups[group[1]].groups[group[2]].variables[var])
     nc_fid.close()
     return np.squeeze(out)
+
+
+def GMI_reader(product_dir: str, frequency_opt: int, num_job=1) -> ctm_model:
+    '''
+       GMI reader
+       Inputs:
+             fname [str]: the name path of the GMI file
+             frequency_opt: the frequency of data
+                        1 -> hourly 
+                        2 -> 3-hourly
+                        3 -> daily
+       Output:
+             gmi_fields [ctm_model]: a dataclass format (see config.py)
+    '''
+    # a nested function
+    def gmi_reader_wrapper(fname_met: str, fname_gas: str, gasnames: list):
+        # define the data
+        gmi_data = ctm_model
+        gmi_data.ctmtype = "GMI"
+        lon = _read_nc(fname_met, 'lon')
+        lat = _read_nc(fname_met, 'lat')
+        lons_grid, lats_grid = np.meshgrid(lon, lat)
+        gmi_data.latitude = lats_grid
+        gmi_data.longitude = lons_grid
+        time_min_delta = _read_nc(fname_met, 'time')
+        time_attr = _get_nc_attr(fname_met, 'time')
+        timebegin_date = str(time_attr["begin_date"])
+        timebegin_time = str(time_attr["begin_time"])
+        if len(timebegin_time) == 5:
+            timebegin_time = "0" + timebegin_time
+        timebegin_date = [int(timebegin_date[0:4]), int(
+            timebegin_date[4:6]), int(timebegin_date[6:8])]
+        timebegin_time = [int(timebegin_time[0:2]), int(
+            timebegin_time[2:4]), int(timebegin_time[4:6])]
+        gmi_data.time = []
+        for t in range(0, np.size(time_min_delta)):
+            gmi_data.time.append(datetime.datetime(timebegin_date[0], timebegin_date[1], timebegin_date[2],
+                                                   timebegin_time[0], timebegin_time[1], timebegin_time[2]) +
+                                 datetime.timedelta(minutes=int(time_min_delta[t])))
+        gmi_data.delta_p = _read_nc(fname_met, 'DELP').astype('float32')
+        gmi_data.pressure_mid = _read_nc(fname_met, 'PL').astype('float32')
+        gmi_data.tempeature_mid = _read_nc(fname_met, 'T').astype('float32')
+
+        gmi_data.gas_profile = {}
+        for gas in gasnames:
+            gmi_data.gas_profile[gas] = _read_nc(
+                fname_gas, gas).astype('float32')
+
+        return gmi_data
+
+    if frequency_opt == 2:
+        # read meteorological and chemical fields
+        tavg3_3d_met_files = sorted(
+            glob.glob(product_dir + "/*tavg3_3d_met_Nv*.nc4"))
+        tavg3_3d_gas_files = sorted(
+            glob.glob(product_dir + "/*tavg3_3d_tac_Nv*.nc4"))
+        if len(tavg3_3d_gas_files) != len(tavg3_3d_met_files):
+            raise Exception(
+                "the data are not consistent")
+        # define gas profiles to be saved
+        gases_to_be_saved = ['NO2', 'CH2O']
+        outputs = Parallel(n_jobs=num_job)(delayed(gmi_reader_wrapper)(
+            tavg3_3d_met_files[k], tavg3_3d_gas_files[k], gases_to_be_saved) for k in range(len(tavg3_3d_met_files)))
+        return outputs
 
 
 def tropomi_reader_hcho(fname: str, interpolation_flag=True) -> satellite:
@@ -79,7 +153,7 @@ def tropomi_reader_hcho(fname: str, interpolation_flag=True) -> satellite:
     tm5_a = _read_group_nc(
         fname, 3, ['PRODUCT', 'SUPPORT_DATA', 'INPUT_DATA'], 'tm5_constant_a')
     tm5_b = _read_group_nc(
-        fname, 3, ['PRODUCT', 'SUPPORT_DATA', 'INPUT_DATA'], 'tm5_constant_b')    
+        fname, 3, ['PRODUCT', 'SUPPORT_DATA', 'INPUT_DATA'], 'tm5_constant_b')
     ps = _read_group_nc(fname, 3, [
                         'PRODUCT', 'SUPPORT_DATA', 'INPUT_DATA'], 'surface_pressure').astype('float32')
     p_mid = np.zeros(
@@ -104,7 +178,7 @@ def tropomi_reader_hcho(fname: str, interpolation_flag=True) -> satellite:
     return tropomi_hcho
 
 
-def tropomi_reader_no2(fname: str, interpolation_flag=True) -> satellite:
+def tropomi_reader_no2(fname: str, ctm_models_coordinate = None) -> satellite:
     '''
        TROPOMI NO2 L2 reader
        Inputs:
@@ -137,7 +211,7 @@ def tropomi_reader_no2(fname: str, interpolation_flag=True) -> satellite:
     tropomi_no2.vcd = vcd*6.02214*1e19*1e-15
     tropomi_no2.scd = scd*6.02214*1e19*1e-15
     # read quality flag
-    tropomi_no2.qa = _read_group_nc(
+    tropomi_no2.quality_flag = _read_group_nc(
         fname, 1, 'PRODUCT', 'qa_value').astype('float32')
     # read pressures for SWs
     tm5_a = _read_group_nc(fname, 1, 'PRODUCT', 'tm5_constant_a')
@@ -171,13 +245,13 @@ def tropomi_reader_no2(fname: str, interpolation_flag=True) -> satellite:
     tropomi_no2.uncertainty = _read_group_nc(fname, 1, 'PRODUCT',
                                              'nitrogendioxide_tropospheric_column_precision').astype('float32')
     # interpolation
-    if interpolation_flag == True:
-        interpolator(1, 1.0, tropomi_no2, geos_model)
+    if (ctm_models_coordinate is not None):
+        interpolator(1, 1.0, tropomi_no2, ctm_models_coordinate)
     # return
     return tropomi_no2
 
 
-def tropomi_reader(product_dir: str, satellite_product_num, num_job=1):
+def tropomi_reader(product_dir: str, satellite_product_num, ctm_models_coordinate, num_job=1):
     '''
         reading tropomi data
         Output [tropomi]: the tropomi @dataclass
@@ -188,10 +262,10 @@ def tropomi_reader(product_dir: str, satellite_product_num, num_job=1):
     # read the files in parallel
     if satellite_product_num == 1:
         outputs = Parallel(n_jobs=num_job)(delayed(tropomi_reader_no2)(
-            L2_files[k]) for k in range(len(L2_files)))
+            L2_files[k],ctm_models_coordinate = ctm_models_coordinate) for k in range(len(L2_files)))
     elif satellite_product_num == 2:
         outputs = Parallel(n_jobs=num_job)(delayed(tropomi_reader_hcho)(
-            L2_files[k]) for k in range(len(L2_files)))
+            L2_files[k],ctm_models_coordinate = ctm_models_coordinate) for k in range(len(L2_files)))
 
 
 class readers(object):
@@ -217,27 +291,41 @@ class readers(object):
             add CTM data
             Input:
                 product_tag [int]: an index specifying the type of data to read:
-                                   1 > GEOS-CCM   
+                                   1 > GMI  
                 product_dir  [Path]: a path object describing the path of CTM files
         '''
 
         self.ctm_product_dir = product_dir
         self.ctm_product_num = product_tag
 
-    def read_satellite_data(self, num_job=1):
+    def read_satellite_data(self, interpolation_flag:bool, num_job=1):
         '''
             read L2 satellite data
             Input:
                 num_job[int]: the number of cpus for parallel computation
         '''
+        if interpolation_flag:
+           ctm_models_coordinate = {}
+           ctm_models_coordinate["Latitude"] = self.ctm_data[0].latitude
+           ctm_models_coordinate["Longitude"] = self.ctm_data[0].longitude
+           tropomi_reader(self.satellite_product_dir.as_posix(),
+                       self.satellite_product_num, ctm_models_coordinate = ctm_models_coordinate, num_job=num_job)
+        else:
+           tropomi_reader(self.satellite_product_dir.as_posix(),
+                       self.satellite_product_num, ctm_models = None, num_job=num_job)        
 
-        tropomi_reader(self.satellite_product_dir.as_posix(),
-                       self.satellite_product_num, num_job=num_job)
+    def read_ctm_data(self, frequency_opt: int, num_job=1):
+
+        if self.ctm_product_num == 1:
+            self.ctm_data = GMI_reader(self.ctm_product_dir.as_posix(),
+                       frequency_opt=frequency_opt, num_job=num_job)
 
 
 # testing
 if __name__ == "__main__":
 
     reader_obj = readers()
-    reader_obj.add_satellite_data(2, Path('download_bucket/hcho'))
-    reader_obj.read_satellite_data()
+    reader_obj.add_ctm_data(1, Path('download_bucket/gmi/'))
+    reader_obj.read_ctm_data(2)
+    reader_obj.add_satellite_data(1, Path('download_bucket/trop_no2'))
+    reader_obj.read_satellite_data(interpolation_flag = True)
