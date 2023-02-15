@@ -3,7 +3,7 @@ import cartopy.crs as ccrs
 from matplotlib.ticker import FormatStrFormatter
 import numpy as np
 
-def test_plotter(X,Y,Z):
+def test_plotter(X,Y,Z,fname):
 
     pc = ccrs.PlateCarree()
     fig = plt.figure(figsize=(8, 8))
@@ -13,7 +13,7 @@ def test_plotter(X,Y,Z):
     ax.imshow(Z, origin='lower',
               extent=[np.nanmin(X.flatten()), np.nanmax(X.flatten()),
                       np.nanmin(Y.flatten()), np.nanmax(Y.flatten())],
-              interpolation='nearest', aspect='auto', vmin=0, vmax=10)
+              interpolation='nearest', aspect='auto', vmin=0, vmax=30)
     ax.coastlines(resolution='50m', color='black', linewidth = 2)
     # fixing tickers
     x_ticks = np.arange(np.nanmin(X.flatten()),
@@ -31,5 +31,5 @@ def test_plotter(X,Y,Z):
     # plotting lat and lon
     plt.xlabel('Lon', fontsize=18)
     plt.ylabel('Lat', fontsize=18)
-    fig.savefig("test.png", format='png', dpi=300)
+    fig.savefig(fname, format='png', dpi=300)
     plt.close()

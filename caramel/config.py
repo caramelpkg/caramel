@@ -20,7 +20,6 @@ class satellite:
     averaging_kernels: np.ndarray
     scattering_weights: np.ndarray
 
-
 @dataclass
 class ctm_model:
     latitude: np.ndarray
