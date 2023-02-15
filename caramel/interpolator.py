@@ -9,7 +9,7 @@ from scipy.interpolate.interpnd import _ndim_coords_from_arrays
 from scipy.spatial import cKDTree
 
 
-def _interpolosis(tri: Delaunay, Z, X, Y, interpolator_type, dists, threshold):
+def _interpolosis(tri: Delaunay, Z: np.array, X: np.array, Y: np.array, interpolator_type: int, dists: np.array, threshold: float) -> np.array:
     # to make the interpolator() shorter
     if interpolator_type == 1:
         interpolator = LinearNDInterpolator(tri, (Z).flatten())
@@ -31,17 +31,16 @@ def _boxfilter(size_kernel_x, size_kernel_y) -> np.array:
     return np.ones((int(size_kernel_x), int(size_kernel_y)))/(size_kernel_x*size_kernel_y)
 
 
-def _upscaler(X, Y, Z, ctm_models_coordinate, grid_size, threshold):
+def _upscaler(X: np.array, Y: np.array, Z: np.array, ctm_models_coordinate: dict, grid_size: float, threshold: float):
     '''
-        Initialize the interpolator function
+        upscaler function
         Input:
-            interpolator_type [int]: an index specifying the type of interpolator
-                    1 > Bilinear interpolation (recommended)
-                    2 > Nearest neighbour
-                    3 > Cressman (not implemented yet)
-                    4 > Poppy (not implemented yet)     
-            sat_data  [satellite]: a dataclass for satellite data
+            X [2D]: x coordinates of the input (Z)
+            Y [2D]: y coordinates of the input (Z)
+            Z [2D]: Z values
             ctm_models_coordinate [dic]: a dictionary containing lat and lon of the model
+            grid_size [float]: the size of grids defined by the user
+            threshold [float]: any points with distance above this will be masked
     '''
     ctm_latitude = ctm_models_coordinate['Latitude']
     ctm_longitude = ctm_models_coordinate['Longitude']
@@ -60,12 +59,14 @@ def _upscaler(X, Y, Z, ctm_models_coordinate, grid_size, threshold):
         points[:, 1] = Y.flatten()
         tri = Delaunay(points)
         tree = cKDTree(points)
-        grid = np.zeros((2,np.shape(ctm_latitude)[0],np.shape(ctm_latitude)[1]))
-        grid[0,:,:] = ctm_longitude
-        grid[1,:,:] = ctm_latitude
+        grid = np.zeros((2, np.shape(ctm_latitude)[
+                        0], np.shape(ctm_latitude)[1]))
+        grid[0, :, :] = ctm_longitude
+        grid[1, :, :] = ctm_latitude
         xi = _ndim_coords_from_arrays(tuple(grid), ndim=points.shape[1])
         dists, _ = tree.query(xi)
-        Z = _interpolosis(tri, Z, ctm_longitude, ctm_latitude, 1, dists, threshold)
+        Z = _interpolosis(tri, Z, ctm_longitude,
+                          ctm_latitude, 1, dists, threshold)
         return ctm_longitude, ctm_latitude, Z
     else:
         # upscaling is not needed
@@ -74,13 +75,14 @@ def _upscaler(X, Y, Z, ctm_models_coordinate, grid_size, threshold):
 
 def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, ctm_models_coordinate: dict) -> satellite:
     '''
-        Initialize the interpolator function
+        The interpolator function
         Input:
             interpolator_type [int]: an index specifying the type of interpolator
                     1 > Bilinear interpolation (recommended)
                     2 > Nearest neighbour
                     3 > Cressman (not implemented yet)
-                    4 > Poppy (not implemented yet)     
+                    4 > Poppy (not implemented yet)
+            grid_size [float]: the size of grids defined by the user
             sat_data  [satellite]: a dataclass for satellite data
             ctm_models_coordinate [dic]: a dictionary containing lat and lon of the model
     '''
@@ -91,7 +93,7 @@ def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, 
     ctm_longitude = ctm_models_coordinate['Longitude']
     size_grid_model_lon = np.abs(ctm_longitude[0, 0]-ctm_longitude[0, 1])
     size_grid_model_lat = np.abs(ctm_latitude[0, 0] - ctm_latitude[1, 0])
-    threshold_ctm = np.sqrt(size_grid_model_lon**2+ size_grid_model_lat**2)
+    threshold_ctm = np.sqrt(size_grid_model_lon**2 + size_grid_model_lat**2)
     # get the center lat/lon
     sat_center_lat = np.nanmean(sat_data.latitude_corner, axis=2).squeeze()
     sat_center_lon = np.nanmean(sat_data.longitude_corner, axis=2).squeeze()
@@ -116,9 +118,9 @@ def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, 
     lons_grid, lats_grid = np.meshgrid(lon_grid, lat_grid)
 
     tree = cKDTree(points)
-    grid = np.zeros((2,np.shape(lons_grid)[0],np.shape(lons_grid)[1]))
-    grid[0,:,:] = lons_grid
-    grid[1,:,:] = lats_grid
+    grid = np.zeros((2, np.shape(lons_grid)[0], np.shape(lons_grid)[1]))
+    grid[0, :, :] = lons_grid
+    grid[1, :, :] = lats_grid
     xi = _ndim_coords_from_arrays(tuple(grid), ndim=points.shape[1])
     dists, _ = tree.query(xi)
     # interpolate 2Ds fields
@@ -130,9 +132,10 @@ def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, 
     _, _, scd = _upscaler(lons_grid, lats_grid, _interpolosis(
         tri, sat_data.scd*mask, lons_grid, lats_grid, interpolator_type, dists, grid_size),
         ctm_models_coordinate, grid_size, threshold_ctm)
-    _, _, tropopause = _upscaler(lons_grid, lats_grid, _interpolosis(
-        tri, sat_data.tropopause*mask, lons_grid, lats_grid, interpolator_type, dists, grid_size),
-        ctm_models_coordinate, grid_size, threshold_ctm)
+    if np.size(sat_data.tropopause) != 0:
+       _, _, tropopause = _upscaler(lons_grid, lats_grid, _interpolosis(
+           tri, sat_data.tropopause*mask, lons_grid, lats_grid, interpolator_type, dists, grid_size),
+           ctm_models_coordinate, grid_size, threshold_ctm)
     latitude_center = upscaled_Y
     longitude_center = upscaled_X
 
@@ -140,22 +143,22 @@ def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, 
         tri, sat_data.uncertainty**2*mask, lons_grid, lats_grid, interpolator_type, dists, grid_size),
         ctm_models_coordinate, grid_size, threshold_ctm))
     # interpolate 3Ds fields
-    if sat_data.scattering_weights:
+    if np.size(sat_data.scattering_weights) != 1:
         scattering_weights = np.zeros((np.shape(sat_data.pressure_mid)[0], np.shape(upscaled_X)[0],
                                        np.shape(upscaled_X)[1]))
         for z in range(0, np.shape(sat_data.pressure_mid)[0]):
             _, _, scattering_weights[z, :, :] = _upscaler(lons_grid, lats_grid,
                                                           _interpolosis(tri, sat_data.scattering_weights[z, :, :].squeeze()
-                                                                        * mask, lons_grid, lats_grid, interpolator_type), ctm_models_coordinate, grid_size)
+                                                                        * mask, lons_grid, lats_grid, interpolator_type, dists, grid_size), ctm_models_coordinate, grid_size)
     else:
         scattering_weights = []
     pressure_mid = np.zeros((np.shape(sat_data.pressure_mid)[0], np.shape(upscaled_X)[0],
                              np.shape(upscaled_X)[1]))
-    # for z in range(0, np.shape(sat_data.pressure_mid)[0]):
-    #    _, _, interpolated_sat.pressure_mid[z, :, :] = _upscaler(lons_grid, lats_grid,
+    #for z in range(0, np.shape(sat_data.pressure_mid)[0]):
+    #    _, _,  pressure_mid[z, :, :] = _upscaler(lons_grid, lats_grid,
     #                                                             _interpolosis(tri, sat_data.pressure_mid[z, :, :].squeeze()
-    #                                                                           * mask, lons_grid, lats_grid, interpolator_type),
-    #                                                             ctm_models_coordinate, grid_size)
+    #                                                                           * mask, lons_grid, lats_grid, interpolator_type, dists, grid_size),
+    #                                                             ctm_models_coordinate, grid_size, threshold_ctm)
 
     interpolated_sat = satellite(vcd, scd, sat_data.time, [], tropopause, latitude_center, longitude_center, [
     ], [], uncertainty, [], pressure_mid, [], scattering_weights)
