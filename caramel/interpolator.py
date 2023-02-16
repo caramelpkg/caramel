@@ -132,10 +132,12 @@ def interpolator(interpolator_type: int, grid_size: float, sat_data: satellite, 
     _, _, scd = _upscaler(lons_grid, lats_grid, _interpolosis(
         tri, sat_data.scd*mask, lons_grid, lats_grid, interpolator_type, dists, grid_size),
         ctm_models_coordinate, grid_size, threshold_ctm)
-    if np.size(sat_data.tropopause) != 0:
+    if np.size(sat_data.tropopause) != 1:
        _, _, tropopause = _upscaler(lons_grid, lats_grid, _interpolosis(
            tri, sat_data.tropopause*mask, lons_grid, lats_grid, interpolator_type, dists, grid_size),
            ctm_models_coordinate, grid_size, threshold_ctm)
+    else:
+       tropopause = np.empty((1))
     latitude_center = upscaled_Y
     longitude_center = upscaled_X
 

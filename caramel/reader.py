@@ -142,14 +142,14 @@ def tropomi_reader_hcho(fname: str, ctm_models_coordinate=None, read_ak=True) ->
                                'formaldehyde_tropospheric_air_mass_factor')
     # read trop no2
     vcd = _read_group_nc(fname, 1, 'PRODUCT',
-                         'formaldehyde_tropospheric_vertical_column').astype('float32')
-    scd = _read_group_nc(fname, 1, 'PRODUCT', 'formaldehyde_tropospheric_vertical_column').astype('float32') *\
+                         'formaldehyde_tropospheric_vertical_column')
+    scd = _read_group_nc(fname, 1, 'PRODUCT', 'formaldehyde_tropospheric_vertical_column') *\
         amf_total
-    vcd = vcd*6.02214*1e19*1e-15
-    scd = scd*6.02214*1e19*1e-15
+    vcd = (vcd*6.02214*1e19*1e-15).astype('float16')
+    scd = (scd*6.02214*1e19*1e-15).astype('float16')
     # read quality flag
     quality_flag = _read_group_nc(
-        fname, 1, 'PRODUCT', 'qa_value').astype('float32')
+        fname, 1, 'PRODUCT', 'qa_value').astype('float16')
     # read pressures for SWs
     tm5_a = _read_group_nc(
         fname, 3, ['PRODUCT', 'SUPPORT_DATA', 'INPUT_DATA'], 'tm5_constant_a')
@@ -165,7 +165,7 @@ def tropomi_reader_hcho(fname: str, ctm_models_coordinate=None, read_ak=True) ->
         AKs = _read_group_nc(fname, 3, [
             'PRODUCT', 'SUPPORT_DATA', 'DETAILED_RESULTS'], 'averaging_kernel').astype('float32')
     else:
-        SWs = np.empty()
+        SWs = np.empty((1))
     # for some reason, in the HCHO product, a and b values are the center instead of the edges (unlike NO2)
     for z in range(0, 34):
         p_mid[z, :, :] = (tm5_a[z]+tm5_b[z]*ps[:, :])/100.0
@@ -173,8 +173,9 @@ def tropomi_reader_hcho(fname: str, ctm_models_coordinate=None, read_ak=True) ->
             SWs[z, :, :] = AKs[:, :, z]*amf_total
     # read the precision
     uncertainty = _read_group_nc(fname, 1, 'PRODUCT',
-                                 'formaldehyde_tropospheric_vertical_column_precision').astype('float32')
-    tropomi_hcho = satellite(vcd, scd, time, [], [], [], [
+                                 'formaldehyde_tropospheric_vertical_column_precision')
+    uncertainty = (uncertainty*6.02214*1e19*1e-15).astype('float16')  
+    tropomi_hcho = satellite(vcd, scd, time, [], np.empty((1)), [], [
     ], latitude_corner, longitude_corner, uncertainty, quality_flag, p_mid, [], SWs)
     # interpolation
     if (ctm_models_coordinate is not None):
@@ -283,7 +284,7 @@ def tropomi_reader(product_dir: str, satellite_product_name, ctm_models_coordina
             L2_files[k], ctm_models_coordinate=ctm_models_coordinate, read_ak=read_ak) for k in range(len(L2_files)))
     elif satellite_product_name.split('_')[-1] == 'HCHO':
         outputs = Parallel(n_jobs=num_job)(delayed(tropomi_reader_hcho)(
-            L2_files[k], ctm_models_coordinate=ctm_models_coordinate) for k in range(len(L2_files)))
+            L2_files[k], ctm_models_coordinate=ctm_models_coordinate, read_ak=read_ak) for k in range(len(L2_files)))
     return outputs
 
 
@@ -342,9 +343,9 @@ if __name__ == "__main__":
 
     reader_obj = readers()
     reader_obj.add_ctm_data('GMI', Path('download_bucket/gmi/'))
-    reader_obj.read_ctm_data(['NO2' 'HCHO'], frequency_opt='3-hourly')
+    reader_obj.read_ctm_data(['HCHO'], frequency_opt='3-hourly')
     reader_obj.add_satellite_data(
-        'TROPOMI_NO2', Path('download_bucket/trop_no2/'))
+        'TROPOMI_HCHO', Path('download_bucket/hcho/'))
     reader_obj.read_satellite_data(read_ak=False, num_job=1)
 
     latitude = reader_obj.ctm_data[0].latitude
@@ -360,4 +361,6 @@ if __name__ == "__main__":
     output[output <= 0.0] = np.nan
     moutput = {}
     moutput["vcds"] = output
+    moutput["lat"] = latitude
+    moutput["lon"] = longitude
     savemat("vcds.mat", moutput)
